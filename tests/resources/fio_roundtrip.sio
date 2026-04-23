@@ -1,0 +1,24 @@
+# Write three integers in binary mode then read them back.
+# Expected stdout: "10\n20\n30\n"
+
+mov "/tmp/sio_fio_test.bin" fwc
+mov "i" fwc
+mov 10 fwt
+mov 20 fwt
+mov 30 fwt
+mov null fwc
+
+mov "/tmp/sio_fio_test.bin" frc
+mov "i" frc
+mov frt acc
+mov acc stdout
+mov "\n" stdout
+mov frt acc
+mov acc stdout
+mov "\n" stdout
+mov frt acc
+mov acc stdout
+mov "\n" stdout
+mov null frc
+
+end

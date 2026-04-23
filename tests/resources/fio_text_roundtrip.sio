@@ -1,0 +1,16 @@
+# Write two lines in text mode then read them back.
+# Expected stdout: "hello\nworld"
+
+mov "/tmp/sio_fio_text_test.txt" fwc
+mov "hello" fwt
+mov "world" fwt
+mov null fwc
+
+mov "/tmp/sio_fio_text_test.txt" frc
+mov frt acc
+mov acc stdout
+mov "\n" stdout
+mov frt acc
+mov acc stdout
+
+end

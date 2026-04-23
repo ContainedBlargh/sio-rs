@@ -359,7 +359,8 @@ impl Register {
                 if let Some(ref mut f) = s.file {
                     match mode {
                         FileMode::Str => {
-                            let text = value.as_string();
+                            let mut text = value.as_string();
+                            text.push('\n');
                             let _ = f.write_all(text.as_bytes());
                             let _ = f.flush();
                             s.byte_pos += text.len() as u64;

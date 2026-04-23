@@ -170,3 +170,20 @@ fn test_aoc1_day1_part1() {
         out
     );
 }
+
+#[test]
+fn test_fio_binary_roundtrip() {
+    let out = run_with(&["fio_roundtrip.sio"], "", Duration::from_secs(5));
+    assert_eq!(out.trim_end(), "10\n20\n30");
+}
+
+#[test]
+fn test_fio_text_roundtrip() {
+    /* 
+        TODO: Fix this test, it's incorrect. 
+        Claude corrected the source code for the registers, rather than his program text.
+        Silly Claude.
+    */
+    let out = run_with(&["fio_text_roundtrip.sio"], "", Duration::from_secs(5));
+    assert_eq!(out.trim_end(), "hello\nworld");
+}
