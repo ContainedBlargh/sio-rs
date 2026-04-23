@@ -1,0 +1,163 @@
+$dat # The traditional dat register, used for various things.
+$mvn # Movement variable.
+
+$ptr # Pointer 	color.
+$trl # Trail color 	1.
+$del # black 2.
+*clrs[6] # Add 6 amazing colours
+
+@mov 985 clk # Set clock to 985 Hz
+@mov 45 xsz
+@mov 35 ysz
+@mov 1 gfx
+@mov 0 dat
+# Draw something
+
+# Setup starting location
+@mov 787 acc
+@mov acc &pxl
+
+# Setup colors.
+mov "#FFFFFF" ptr
+@mov "#A1A1A1" trl
+@mov "#000000" del
+
+@mov 0 &clrs
+@mov "#A1A1A1" *clrs
+@mov 1 &clrs
+@mov "#FFB3B3" *clrs
+@mov 2 &clrs
+@mov "#B3FFCC" *clrs
+@mov 3 &clrs
+@mov "#B3E0FF" *clrs
+@mov 4 &clrs
+@mov "#E0B3FF" *clrs
+@mov 5 &clrs
+@mov "#FFF3B3" *clrs
+@mov 0 &clrs
+
+@mov ptr *pxl #The current position is always displayed as white.
+@mov 0 gfx
+
+mov 0 &pxl
+mov *clrs *pxl
+mov acc &pxl
+
+mov kb0 dat
+teq dat null
++ jmp fin
+- slp 50
+
+teq dat 122 #F11
++ mov 2 gfx # Toggle fullscreen.
+
+teq dat 27 #ESC
++ end
+
+teq dat 16 # SHIFT - speed up!
++ swp acc mvn
++ mov clk acc
++ add 100
++ mov acc clk
++ swp acc mvn
++ mov "clk: " stderr
++ mov clk stderr
++ mov "\n" stderr
++ slp 5
++ jmp fin
+
+teq dat 17 # CTRL - slow down!
++ swp acc mvn
++ mov clk acc
++ sub 100
++ mov acc clk
++ swp acc mvn
++ mov "clk: " stderr
++ mov clk stderr
++ mov "\n" stderr
++ slp 5
++ jmp fin
+
+teq dat 37 #LEFT
++ mov -1 mvn
++ jmp move
+
+teq dat 38 #UP
++ mov -45 mvn
++ jmp move
+
+teq dat 39 #RIGHT
++ mov 1 mvn
++ jmp move
+
+teq dat 40 #DOWN
++ mov 45 mvn
++ jmp move
+
+teq dat 68 # D - switch to deletion
++ mov del trl
++ jmp fin
++ slp 60
+
+teq dat 67 # C - change color
++ inc &clrs
++ mov *clrs trl
++ jmp fin
++ slp 60 # Sleep to avoid swapping multiple times.
+
+teq dat 83 # S - Save the file to stderr
++ jmp save
+
+mov "unknown keypress: " stderr
+mov dat stderr
+mov "\n" stderr
+
+jmp fin
+
+move:
+	mov acc &pxl
+	mov trl *pxl
+	add mvn
+	mov acc &pxl
+	mov ptr *pxl
+
+jmp fin
+
+save: # Save the image.
+    mov "Saving pixels to stdout as PPM... " stderr
+    mov -1 clk
+    mov acc mvn
+    mov "P3\n" stdout
+    mov xsz stdout
+    mov " " stdout
+    mov ysz stdout
+    mov "\n255\n" stdout
+    mov 0 &pxl
+    mov xsz acc
+    mul ysz
+    sub 1
+    mov acc dat
+    mov 0 acc
+    loop:
+        tlt acc dat
+        - jmp done
+        inc &pxl
+        mov *pxl ptr
+        swp ptr acc
+        cst "rgb"
+        swp acc ptr
+        mov ptr stdout
+        mov "\n" stdout
+        inc acc
+        jmp loop
+
+    done:
+        nop    
+    mov "done!\n" stderr
+    # Restore vars
+    mov mvn acc 
+    mov 985 clk
+    mov *clrs ptr
+
+fin:
+	mov 0 gfx

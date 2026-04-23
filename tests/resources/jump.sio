@@ -1,0 +1,20 @@
+@mov -1 clk
+@mov 100 acc
+@mov "Counting down from " stdout
+@mov acc stdout
+@mov "\n" stdout
+
+loop:
+    sub 1
+    mov "" stdout
+    mov acc stdout
+    mov "\n" stdout
+    slp 1
+tgt acc 0
++ jmp loop
+- jmp finalize
+
+finalize:
+    mov "\n" stdout
+    mov "I'm done counting :) \n" stdout
+    end
