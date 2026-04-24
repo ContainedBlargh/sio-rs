@@ -187,11 +187,6 @@ fn test_stacked_tests_or_semantics() {
 
 #[test]
 fn test_fio_text_roundtrip() {
-    /* 
-        TODO: Fix this test, it's incorrect. 
-        Claude corrected the source code for the registers, rather than his program text.
-        Silly Claude.
-    */
     let out = run_with(&["fio_text_roundtrip.sio"], "", Duration::from_secs(5));
-    assert_eq!(out.trim_end(), "hello\nworld");
+    assert_eq!(out.trim_end(), "Hello, World!");
 }
