@@ -8,6 +8,26 @@ use crate::pins::get_pin_channel;
 use crate::register::{self, Register};
 use crate::value::Value;
 
+/// Format a parse error with file location and an optional hint.
+/// Error strings may embed a hint after a `\nhint: ` sentinel.
+fn format_parse_error(file: &str, line_num: usize, source: &str, msg: &str) -> String {
+    let (main, hint) = msg
+        .split_once("\nhint: ")
+        .map(|(m, h)| (m, Some(h)))
+        .unwrap_or((msg, None));
+    let mut out = format!(
+        "error in {}:{}: {}\n  | {}",
+        file,
+        line_num,
+        main,
+        source.trim()
+    );
+    if let Some(h) = hint {
+        out.push_str(&format!("\n  = hint: {}", h));
+    }
+    out
+}
+
 pub fn parse_from_path(path: &str) -> Result<Node, String> {
     let content =
         std::fs::read_to_string(path).map_err(|e| format!("read {}: {}", path, e))?;
@@ -97,7 +117,12 @@ pub fn parse_from_path(path: &str) -> Result<Node, String> {
         // 4) Label declaration
         if let Some((label_name, rest)) = try_match_label(&line) {
             if jmp_table.contains_key(&label_name) {
-                return Err(format!("label '{}' already defined", label_name));
+                return Err(format_parse_error(
+                    &name,
+                    i,
+                    &raw,
+                    &format!("label '{}' is already defined\nhint: each label name must be unique; rename one of them", label_name),
+                ));
             }
             jmp_table.insert(label_name, program.len());
             if rest.trim().is_empty() {
@@ -120,16 +145,20 @@ pub fn parse_from_path(path: &str) -> Result<Node, String> {
 
         let remaining: &[String] = &lines[i..];
         let (instruction, consumed) =
-            parse_instruction(&tokens, &registers, &labels, remaining)?;
+            parse_instruction(&tokens, &registers, &labels, remaining)
+                .map_err(|e| format_parse_error(&name, i, &raw, &e))?;
         if let Some(instr) = instruction {
             program.push((run_once, instr));
         }
         i += consumed;
     }
 
-    for (_, target) in &jmp_table {
+    for (label, target) in &jmp_table {
         if *target >= program.len() {
-            return Err("cannot have jump label as final line".to_string());
+            return Err(format!(
+                "error in {}: label '{}' has no instruction after it\n  = hint: every label must be followed by at least one instruction; add `nop` after it if nothing else fits",
+                name, label
+            ));
         }
     }
 
@@ -155,80 +184,92 @@ fn parse_instruction(
         "end" => Instruction::End,
         "nop" => Instruction::Nop,
         "mov" => {
-            let l = mon(0).ok_or("mov requires 2 operands")?;
-            let r = mon(1).ok_or("mov requires 2 operands")?;
+            let l = mon(0).ok_or("mov requires 2 operands\nhint: usage is `mov <src> <dst>` — e.g. `mov 1 acc` or `mov acc $myvar`")?;
+            let r = mon(1).ok_or("mov requires 2 operands\nhint: usage is `mov <src> <dst>` — e.g. `mov 1 acc` or `mov acc $myvar`")?;
             let src = parse_val(&l)?;
             let dst = parse_val(&r)?;
             match dst {
                 Value::Reg(rc) => Instruction::Mov(src, rc),
-                _ => return Err(format!("mov destination must be a register: {}", r)),
+                _ => return Err(format!(
+                    "mov destination '{}' is not a register\nhint: the second argument must be a writable register (e.g. `acc`, `$myvar`), not a literal value",
+                    r
+                )),
             }
         }
         "swp" => {
-            let l = mon(0).ok_or("swp requires 2 registers")?;
-            let r = mon(1).ok_or("swp requires 2 registers")?;
+            let l = mon(0).ok_or("swp requires 2 registers\nhint: usage is `swp <reg1> <reg2>` — e.g. `swp acc $tmp`")?;
+            let r = mon(1).ok_or("swp requires 2 registers\nhint: usage is `swp <reg1> <reg2>` — e.g. `swp acc $tmp`")?;
             let a = must_register(&parse_val(&l)?, &l)?;
             let b = must_register(&parse_val(&r)?, &r)?;
             Instruction::Swp(a, b)
         }
         "jmp" => {
-            let lbl = mon(0).ok_or("jmp requires a label")?;
+            let lbl = mon(0).ok_or("jmp requires a label\nhint: usage is `jmp <label>` — add `mylabel:` somewhere in the program")?;
             if !labels.contains(&lbl) {
-                return Err(format!("jmp to unknown label '{}'", lbl));
+                return Err(format!(
+                    "jmp to unknown label '{}'\nhint: add `{}:` on its own line at the target location",
+                    lbl, lbl
+                ));
             }
             Instruction::Jmp(lbl)
         }
         "slp" => {
-            let v = parse_val(&mon(0).ok_or("slp requires 1 operand")?)?;
+            let v = parse_val(&mon(0).ok_or("slp requires 1 operand\nhint: usage is `slp <duration>` — duration is in milliseconds (relative to clock speed)")?)?;
             Instruction::Slp(v)
         }
         "slx" => {
-            let s = mon(0).ok_or("slx requires 1 register")?;
+            let s = mon(0).ok_or("slx requires 1 register\nhint: usage is `slx <xbus-pin>` — e.g. `slx x0`; the register must be declared as `$x0`")?;
             let v = parse_val(&s)?;
             let rc = must_register(&v, &s)?;
             {
                 let borrow = rc.borrow();
                 match borrow.as_pin_channel() {
                     Some(ch) if ch.is_xbus() => {}
-                    _ => return Err(format!("slx must wait on an XBus register: {}", s)),
+                    _ => return Err(format!(
+                        "slx requires an XBus register, got '{}'\nhint: XBus registers are declared as `$xN` (e.g. `$x0`); power pins (`$pN`) cannot be used with slx",
+                        s
+                    )),
                 }
             }
             Instruction::Slx(rc)
         }
         "gen" => {
-            let p = mon(0).ok_or("gen requires 3 operands")?;
-            let on = mon(1).ok_or("gen requires 3 operands")?;
-            let off = mon(2).ok_or("gen requires 3 operands")?;
+            let p = mon(0).ok_or("gen requires 3 operands\nhint: usage is `gen <pin> <on_ms> <off_ms>` — e.g. `gen p0 10 10`")?;
+            let on = mon(1).ok_or("gen requires 3 operands\nhint: usage is `gen <pin> <on_ms> <off_ms>` — e.g. `gen p0 10 10`")?;
+            let off = mon(2).ok_or("gen requires 3 operands\nhint: usage is `gen <pin> <on_ms> <off_ms>` — e.g. `gen p0 10 10`")?;
             let rv = parse_val(&p)?;
             let rc = must_register(&rv, &p)?;
             {
                 let borrow = rc.borrow();
                 if borrow.as_pin_channel().is_none() {
-                    return Err(format!("gen must target a pin register: {}", p));
+                    return Err(format!(
+                        "gen requires a pin register, got '{}'\nhint: declare a power or XBus pin with `$p0` or `$x0` and use that as the first argument",
+                        p
+                    ));
                 }
             }
             Instruction::Gen(rc, parse_val(&on)?, parse_val(&off)?)
         }
-        "add" => Instruction::Add(parse_val(&mon(0).ok_or("add requires 1 operand")?)?),
-        "sub" => Instruction::Sub(parse_val(&mon(0).ok_or("sub requires 1 operand")?)?),
-        "mul" => Instruction::Mul(parse_val(&mon(0).ok_or("mul requires 1 operand")?)?),
-        "div" => Instruction::Div(parse_val(&mon(0).ok_or("div requires 1 operand")?)?),
+        "add" => Instruction::Add(parse_val(&mon(0).ok_or("add requires 1 operand\nhint: usage is `add <value>` — adds value to acc")?)?),
+        "sub" => Instruction::Sub(parse_val(&mon(0).ok_or("sub requires 1 operand\nhint: usage is `sub <value>` — subtracts value from acc")?)?),
+        "mul" => Instruction::Mul(parse_val(&mon(0).ok_or("mul requires 1 operand\nhint: usage is `mul <value>` — multiplies acc by value")?)?),
+        "div" => Instruction::Div(parse_val(&mon(0).ok_or("div requires 1 operand\nhint: usage is `div <value>` — divides acc by value")?)?),
         "not" => Instruction::Not,
-        "cst" => Instruction::Cst(parse_val(&mon(0).ok_or("cst requires 1 operand")?)?),
+        "cst" => Instruction::Cst(parse_val(&mon(0).ok_or("cst requires 1 operand\nhint: usage is `cst <type>` — type is one of \"i\", \"f\", \"s\", \"c\", \"rgb\", or \"iN\" for base-N integer parsing")?)?),
         "inc" => {
-            let s = mon(0).ok_or("inc requires 1 register")?;
+            let s = mon(0).ok_or("inc requires 1 register\nhint: usage is `inc <reg>` — increments the register by 1")?;
             let v = parse_val(&s)?;
             Instruction::Inc(must_register(&v, &s)?)
         }
         "dec" => {
-            let s = mon(0).ok_or("dec requires 1 register")?;
+            let s = mon(0).ok_or("dec requires 1 register\nhint: usage is `dec <reg>` — decrements the register by 1")?;
             let v = parse_val(&s)?;
             Instruction::Dec(must_register(&v, &s)?)
         }
-        "dgt" => Instruction::Dgt(parse_val(&mon(0).ok_or("dgt requires 1 operand")?)?),
+        "dgt" => Instruction::Dgt(parse_val(&mon(0).ok_or("dgt requires 1 operand\nhint: usage is `dgt <index>` — extracts the character/digit at that position from acc")?)?),
         "dst" => {
-            let l = mon(0).ok_or("dst requires 2 operands")?;
-            let r = mon(1).ok_or("dst requires 2 operands")?;
+            let l = mon(0).ok_or("dst requires 2 operands\nhint: usage is `dst <index> <value>` — sets the character/digit at index in acc to value")?;
+            let r = mon(1).ok_or("dst requires 2 operands\nhint: usage is `dst <index> <value>` — sets the character/digit at index in acc to value")?;
             Instruction::Dst(parse_val(&l)?, parse_val(&r)?)
         }
         "teq" | "tgt" | "tlt" | "tcp" => {
@@ -238,8 +279,8 @@ fn parse_instruction(
                 "tlt" => TestKind::Tlt,
                 _ => TestKind::Tcp,
             };
-            let l = mon(0).ok_or("test op requires 2 operands")?;
-            let r = mon(1).ok_or("test op requires 2 operands")?;
+            let l = mon(0).ok_or("test instruction requires 2 operands\nhint: usage is e.g. `teq acc 0` — follow it with `+ <instr>` and/or `- <instr>` branch lines")?;
+            let r = mon(1).ok_or("test instruction requires 2 operands\nhint: usage is e.g. `teq acc 0` — follow it with `+ <instr>` and/or `- <instr>` branch lines")?;
             let (pos, neg, consumed) = parse_test_branches(registers, labels, remaining_lines)?;
             return Ok((
                 Some(Instruction::Test {
@@ -252,7 +293,13 @@ fn parse_instruction(
                 consumed,
             ));
         }
-        other => return Err(format!("unknown instruction: '{}'", other)),
+        other => {
+            let known = "end nop mov swp jmp slp slx gen add sub mul div not cst inc dec dgt dst teq tgt tlt tcp";
+            return Err(format!(
+                "unknown instruction '{}'\nhint: known instructions are: {}",
+                other, known
+            ));
+        }
     };
 
     Ok((Some(instr), 0))
@@ -376,7 +423,10 @@ fn parse_branch_lines(
 fn must_register(v: &Value, token: &str) -> Result<RegRef, String> {
     match v {
         Value::Reg(r) => Ok(Rc::clone(r)),
-        _ => Err(format!("expected register, got '{}'", token)),
+        _ => Err(format!(
+            "'{}' is a literal value, but a register is required here\nhint: use a register like `acc` or a declared `${}` instead of a literal",
+            token, token
+        )),
     }
 }
 
@@ -400,7 +450,15 @@ pub fn parse_value(token: &str, registers: &HashMap<String, RegRef>) -> Result<V
     if let Some(r) = registers.get(token) {
         return Ok(Value::Reg(Rc::clone(r)));
     }
-    Err(format!("unknown token: '{}'", token))
+    let hint = if token.chars().next().map_or(false, |c| c.is_alphabetic()) {
+        format!(
+            "\nhint: '{}' is not a known register or literal. If it's a variable, declare it at the top of the file with `${}`",
+            token, token
+        )
+    } else {
+        String::new()
+    };
+    Err(format!("unknown token '{}'{}", token, hint))
 }
 
 fn no_comments(line: &str) -> String {

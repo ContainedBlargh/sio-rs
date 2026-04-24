@@ -36,7 +36,7 @@ fn main() {
                 .map(|path| {
                     thread::spawn(move || match parser::parse_from_path(&path) {
                         Ok(node) => node.run(),
-                        Err(e) => eprintln!("{}: {}", path, e),
+                        Err(e) => eprintln!("{}", e),
                     })
                 })
                 .collect();
@@ -56,7 +56,7 @@ fn main() {
             .map(|path| {
                 thread::spawn(move || match parser::parse_from_path(&path) {
                     Ok(node) => node.run(),
-                    Err(e) => eprintln!("{}: {}", path, e),
+                    Err(e) => eprintln!("{}", e),
                 })
             })
             .collect();
