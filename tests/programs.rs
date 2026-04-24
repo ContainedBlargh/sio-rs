@@ -178,6 +178,14 @@ fn test_fio_binary_roundtrip() {
 }
 
 #[test]
+fn test_stacked_tests_or_semantics() {
+    let out = run_with(&["stacked-tests.sio"], "", Duration::from_secs(5));
+    // "a" and "A" each match the stacked teq; "b" does not.
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines, vec!["match", "match", "done"]);
+}
+
+#[test]
 fn test_fio_text_roundtrip() {
     /* 
         TODO: Fix this test, it's incorrect. 

@@ -1,0 +1,21 @@
+$val
+
+@mov -1 clk
+
+mov "a" val
+teq val "a"
+teq val "A"
++ mov "match\n" stdout
+
+mov "A" val
+teq val "a"
+teq val "A"
++ mov "match\n" stdout
+
+mov "b" val
+teq val "a"
+teq val "A"
++ mov "match\n" stdout
+
+mov "done\n" stdout
+end

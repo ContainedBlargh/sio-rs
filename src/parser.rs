@@ -258,12 +258,49 @@ fn parse_instruction(
     Ok((Some(instr), 0))
 }
 
+fn is_test_line(line: &str) -> bool {
+    let stripped = no_comments(line);
+    let inner = stripped.trim_start_matches('@').trim_start();
+    let op = inner.split_whitespace().next().unwrap_or("").to_lowercase();
+    matches!(op.as_str(), "teq" | "tgt" | "tlt" | "tcp")
+}
+
 fn parse_test_branches(
     registers: &HashMap<String, RegRef>,
     labels: &HashSet<String>,
     remaining: &[String],
 ) -> Result<(Vec<Instruction>, Vec<Instruction>, usize), String> {
     let trimmed: Vec<String> = remaining.iter().map(|l| l.trim().to_string()).collect();
+    if trimmed.is_empty() {
+        return Ok((Vec::new(), Vec::new(), 0));
+    }
+    let first = &trimmed[0];
+    let pos_first = first.starts_with('+');
+    let neg_first = first.starts_with('-');
+
+    // Lookahead: if no immediate branches but consecutive test instructions follow,
+    // share their branches with this test (OR semantics for stacked tests).
+    // consumed=0 so the intervening tests are still parsed normally by the main loop.
+    if !pos_first && !neg_first {
+        let skip = trimmed.iter().take_while(|l| is_test_line(l)).count();
+        if skip > 0 && skip < trimmed.len() {
+            let after = &trimmed[skip..];
+            if after[0].starts_with('+') || after[0].starts_with('-') {
+                let (pos, neg, _) = collect_branches(after, registers, labels)?;
+                return Ok((pos, neg, 0));
+            }
+        }
+        return Ok((Vec::new(), Vec::new(), 0));
+    }
+
+    collect_branches(&trimmed, registers, labels)
+}
+
+fn collect_branches(
+    trimmed: &[String],
+    registers: &HashMap<String, RegRef>,
+    labels: &HashSet<String>,
+) -> Result<(Vec<Instruction>, Vec<Instruction>, usize), String> {
     if trimmed.is_empty() {
         return Ok((Vec::new(), Vec::new(), 0));
     }
@@ -301,8 +338,8 @@ fn parse_test_branches(
         (Vec::new(), Vec::new())
     };
 
-    let pos = parse_branch_lines(&pos_raw, '+', registers, labels, remaining)?;
-    let neg = parse_branch_lines(&neg_raw, '-', registers, labels, remaining)?;
+    let pos = parse_branch_lines(&pos_raw, '+', registers, labels, trimmed)?;
+    let neg = parse_branch_lines(&neg_raw, '-', registers, labels, trimmed)?;
     let consumed = pos_raw.len() + neg_raw.len();
     Ok((pos, neg, consumed))
 }
