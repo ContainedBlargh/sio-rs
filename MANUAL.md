@@ -240,6 +240,22 @@ tgt acc 0
 - jmp finalize
 ```
 
+Test instructions in `sio-rs` can be stacked on top of each other, to test multiple cases and execute the same code.
+
+Example — test for multiple things:
+
+```
+teq acc 0
+teq acc 2
+teq acc 4
+teq acc 6
+teq acc 8
+teq acc 10
++ mov "acc is currently even!\n" stdout
+- mov "acc is likely odd or bigger than ten... \n" stdout
+- mov "which means that it is untenable and thus also sort of odd!\n" stdout
+```
+
 ---
 
 ### Run-Once Instructions
