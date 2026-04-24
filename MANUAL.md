@@ -586,38 +586,6 @@ done:
     end
 ```
 
-### XBus Ping-Pong
-
-**ping.sio**
-```sio
-$x0
-
-@mov -1 clk
-@mov 5 acc
-
-mov acc x0
-sub 1
-teq acc 0
-+ end
-```
-
-**pong.sio**
-```sio
-$x0
-
-@mov -1 clk
-
-slx x0
-mov x0 acc
-mov "received: " stdout
-mov acc stdout
-mov "\n" stdout
-teq acc 0
-- jmp pong
-
-pong:
-```
-
 ---
 
 ## Quick Reference
