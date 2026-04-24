@@ -75,7 +75,8 @@ fn main() {
             .map(|path| {
                 thread::spawn(move || match parser::parse_from_path(&path) {
                     Ok(node) => node.run(),
-                    Err(e) => eprintln!("{}", e),
+                    // Ignore non-node strings, these are passed as commandline arguments.
+                    Err(_e) => (),
                 })
             })
             .collect();

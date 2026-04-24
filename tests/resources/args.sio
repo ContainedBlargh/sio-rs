@@ -1,0 +1,9 @@
+@mov &args acc
+
+tlt acc 1
++ end
+
+mov *args stdout
+inc &args
+mov "\n" stdout
+sub 1

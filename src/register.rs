@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::env;
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Seek, Write};
 use std::rc::Rc;
 
@@ -29,20 +30,31 @@ pub struct FileWriteState {
 
 impl FileReadState {
     pub fn new() -> Self {
-        Self { mode: FileMode::Str, file: None, byte_pos: 0 }
+        Self {
+            mode: FileMode::Str,
+            file: None,
+            byte_pos: 0,
+        }
     }
 }
 
 impl FileWriteState {
     pub fn new() -> Self {
-        Self { mode: FileMode::Str, file: None, byte_pos: 0 }
+        Self {
+            mode: FileMode::Str,
+            file: None,
+            byte_pos: 0,
+        }
     }
 }
 
 pub enum Register {
     Null,
     Plain(Value),
-    Clock { speed: i32, active: bool },
+    Clock {
+        speed: i32,
+        active: bool,
+    },
     Pin(PinChannel),
     Offset(i32),
     SizedMemory {
@@ -263,38 +275,38 @@ impl Register {
                     v => s.prepare(v.to_int().unsigned_abs() as usize),
                 }
             }
-            Register::Rng(r) => {
-                match value.flatten() {
-                    Value::Null => {
-                        r.seed_time_based();
-                    }
-                    Value::S(s) => {
-                        let n = Value::S(s.clone()).to_int();
-                        r.seed = n;
-                        r.state = (n as u64).wrapping_mul(2654435761) | 1;
-                        r.kind = RngKind::String;
-                        r.initialized = true;
-                    }
-                    Value::F(f) => {
-                        let n = (f * 9999.0) as i32;
-                        r.seed = n;
-                        r.state = (n as u64).wrapping_mul(2654435761) | 1;
-                        r.kind = RngKind::Float;
-                        r.initialized = true;
-                    }
-                    Value::I(i) => {
-                        r.seed = i;
-                        r.state = (i as u64).wrapping_mul(2654435761) | 1;
-                        r.kind = RngKind::Int;
-                        r.initialized = true;
-                    }
-                    Value::Reg(_) => unreachable!(),
+            Register::Rng(r) => match value.flatten() {
+                Value::Null => {
+                    r.seed_time_based();
                 }
-            }
+                Value::S(s) => {
+                    let n = Value::S(s.clone()).to_int();
+                    r.seed = n;
+                    r.state = (n as u64).wrapping_mul(2654435761) | 1;
+                    r.kind = RngKind::String;
+                    r.initialized = true;
+                }
+                Value::F(f) => {
+                    let n = (f * 9999.0) as i32;
+                    r.seed = n;
+                    r.state = (n as u64).wrapping_mul(2654435761) | 1;
+                    r.kind = RngKind::Float;
+                    r.initialized = true;
+                }
+                Value::I(i) => {
+                    r.seed = i;
+                    r.state = (i as u64).wrapping_mul(2654435761) | 1;
+                    r.kind = RngKind::Int;
+                    r.initialized = true;
+                }
+                Value::Reg(_) => unreachable!(),
+            },
             Register::FileReadControl(state) => {
                 let mut s = state.borrow_mut();
                 match value.flatten() {
-                    Value::Null => { s.file = None; }
+                    Value::Null => {
+                        s.file = None;
+                    }
                     Value::I(n) => {
                         if let Some(ref mut f) = s.file {
                             let pos = n.max(0) as u64;
@@ -308,7 +320,10 @@ impl Register {
                         "i" => s.mode = FileMode::Int,
                         "f" => s.mode = FileMode::Float,
                         path => match std::fs::File::open(path) {
-                            Ok(f) => { s.file = Some(BufReader::new(f)); s.byte_pos = 0; }
+                            Ok(f) => {
+                                s.file = Some(BufReader::new(f));
+                                s.byte_pos = 0;
+                            }
                             Err(e) => eprintln!("frc: cannot open '{}': {}", path, e),
                         },
                     },
@@ -319,7 +334,9 @@ impl Register {
                 let mut s = state.borrow_mut();
                 match value.flatten() {
                     Value::Null => {
-                        if let Some(ref mut f) = s.file { let _ = f.flush(); }
+                        if let Some(ref mut f) = s.file {
+                            let _ = f.flush();
+                        }
                         s.file = None;
                     }
                     Value::I(n) => {
@@ -343,8 +360,16 @@ impl Register {
                         "f" => s.mode = FileMode::Float,
                         path => {
                             use std::fs::OpenOptions;
-                            match OpenOptions::new().write(true).create(true).truncate(true).open(path) {
-                                Ok(f) => { s.file = Some(BufWriter::new(f)); s.byte_pos = 0; }
+                            match OpenOptions::new()
+                                .write(true)
+                                .create(true)
+                                .truncate(true)
+                                .open(path)
+                            {
+                                Ok(f) => {
+                                    s.file = Some(BufWriter::new(f));
+                                    s.byte_pos = 0;
+                                }
                                 Err(e) => eprintln!("fwc: cannot open '{}': {}", path, e),
                             }
                         }
@@ -364,7 +389,9 @@ impl Register {
                             let _ = f.write_all(text.as_bytes());
                             let _ = f.flush();
                             s.byte_pos += text.len() as u64;
-                            if tape.len() >= 32 { tape.pop_front(); }
+                            if tape.len() >= 32 {
+                                tape.pop_front();
+                            }
                             tape.push_back(text);
                         }
                         FileMode::Int => {
@@ -372,7 +399,9 @@ impl Register {
                             let _ = f.write_all(&bytes);
                             let _ = f.flush();
                             s.byte_pos += 4;
-                            if tape.len() >= 32 { tape.pop_front(); }
+                            if tape.len() >= 32 {
+                                tape.pop_front();
+                            }
                             tape.push_back(value.to_int().to_string());
                         }
                         FileMode::Float => {
@@ -380,14 +409,24 @@ impl Register {
                             let _ = f.write_all(&bytes);
                             let _ = f.flush();
                             s.byte_pos += 4;
-                            if tape.len() >= 32 { tape.pop_front(); }
+                            if tape.len() >= 32 {
+                                tape.pop_front();
+                            }
                             tape.push_back(value.to_float().to_string());
                         }
                     }
                 }
             }
             #[cfg(feature = "gfx")]
-            Register::Gfx { pixel_mem, pixel_offset, xsz, ysz, wsz, hsz, state } => {
+            Register::Gfx {
+                pixel_mem,
+                pixel_offset,
+                xsz,
+                ysz,
+                wsz,
+                hsz,
+                state,
+            } => {
                 let cmd = value.to_int();
                 match cmd {
                     1 => {
@@ -397,9 +436,7 @@ impl Register {
                         let ww = wsz.borrow_mut().get().to_int().max(1) as u32;
                         let hw = hsz.borrow_mut().get().to_int().max(1) as u32;
                         // Resize pixel memory if dimensions changed.
-                        if let Register::SizedMemory { ref mut mem, .. } =
-                            *pixel_mem.borrow_mut()
-                        {
+                        if let Register::SizedMemory { ref mut mem, .. } = *pixel_mem.borrow_mut() {
                             let new_size = xw * yw;
                             if mem.len() != new_size {
                                 mem.resize(new_size, Value::Null);
@@ -507,31 +544,45 @@ impl Register {
                                     s.byte_pos += line.len() as u64;
                                     if line.ends_with('\n') {
                                         line.pop();
-                                        if line.ends_with('\r') { line.pop(); }
+                                        if line.ends_with('\r') {
+                                            line.pop();
+                                        }
                                     }
                                     Value::S(line)
                                 }
                                 Err(_) => Value::Null,
                             }
-                        } else { Value::Null }
+                        } else {
+                            Value::Null
+                        }
                     }
                     FileMode::Int => {
                         if let Some(ref mut f) = s.file {
                             let mut buf = [0u8; 4];
                             match f.read_exact(&mut buf) {
-                                Ok(()) => { s.byte_pos += 4; Value::I(i32::from_le_bytes(buf)) }
+                                Ok(()) => {
+                                    s.byte_pos += 4;
+                                    Value::I(i32::from_le_bytes(buf))
+                                }
                                 Err(_) => Value::Null,
                             }
-                        } else { Value::Null }
+                        } else {
+                            Value::Null
+                        }
                     }
                     FileMode::Float => {
                         if let Some(ref mut f) = s.file {
                             let mut buf = [0u8; 4];
                             match f.read_exact(&mut buf) {
-                                Ok(()) => { s.byte_pos += 4; Value::F(f32::from_le_bytes(buf)) }
+                                Ok(()) => {
+                                    s.byte_pos += 4;
+                                    Value::F(f32::from_le_bytes(buf))
+                                }
                                 Err(_) => Value::Null,
                             }
-                        } else { Value::Null }
+                        } else {
+                            Value::Null
+                        }
                     }
                 }
             }
@@ -644,24 +695,50 @@ pub fn new_default_map() -> std::collections::HashMap<String, Rc<RefCell<Registe
     // File I/O: frc+frt share one read state; fwc+fwt share one write state.
     let fread = Rc::new(RefCell::new(FileReadState::new()));
     let fwrite = Rc::new(RefCell::new(FileWriteState::new()));
-    m.insert("frc".to_string(), Rc::new(RefCell::new(Register::FileReadControl(Rc::clone(&fread)))));
-    m.insert("frt".to_string(), Rc::new(RefCell::new(Register::FileReadTape(Rc::clone(&fread)))));
-    m.insert("fwc".to_string(), Rc::new(RefCell::new(Register::FileWriteControl(Rc::clone(&fwrite)))));
-    m.insert("fwt".to_string(), Rc::new(RefCell::new(Register::FileWriteTape {
-        state: Rc::clone(&fwrite),
-        tape: VecDeque::new(),
-    })));
+    m.insert(
+        "frc".to_string(),
+        Rc::new(RefCell::new(Register::FileReadControl(Rc::clone(&fread)))),
+    );
+    m.insert(
+        "frt".to_string(),
+        Rc::new(RefCell::new(Register::FileReadTape(Rc::clone(&fread)))),
+    );
+    m.insert(
+        "fwc".to_string(),
+        Rc::new(RefCell::new(Register::FileWriteControl(Rc::clone(&fwrite)))),
+    );
+    m.insert(
+        "fwt".to_string(),
+        Rc::new(RefCell::new(Register::FileWriteTape {
+            state: Rc::clone(&fwrite),
+            tape: VecDeque::new(),
+        })),
+    );
 
+    // Commandline args:
+    let raw_args: Vec<Value> = env::args().filter(|s|!s.ends_with(".sio")).map(|s| Value::S(s)).collect();
+    let args: Vec<Value> = raw_args[1..].to_vec();
+    let argc: i32 = args
+        .len()
+        .try_into()
+        .expect("Too many command line arguments!");
+    let argc_reg = Rc::new(RefCell::new(Register::Plain(Value::I(argc))));
+    m.insert("&args".to_string(), Rc::clone(&argc_reg));
+    m.insert(
+        "*args".to_string(),
+        Rc::new(RefCell::new(Register::SizedMemory {
+            mem: args,
+            offset: Rc::clone(&argc_reg),
+        })),
+    );
     m
 }
 
 #[cfg(feature = "gfx")]
-pub fn add_graphical_registers(
-    m: &mut std::collections::HashMap<String, Rc<RefCell<Register>>>,
-) {
+pub fn add_graphical_registers(m: &mut std::collections::HashMap<String, Rc<RefCell<Register>>>) {
     use crate::channel::PinChannel;
-    use std::sync::atomic::AtomicI32;
     use std::sync::Arc;
+    use std::sync::atomic::AtomicI32;
 
     let wsz_rc = Rc::new(RefCell::new(Register::Plain(Value::I(800))));
     let hsz_rc = Rc::new(RefCell::new(Register::Plain(Value::I(600))));

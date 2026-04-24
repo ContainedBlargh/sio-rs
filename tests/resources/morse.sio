@@ -1,0 +1,250 @@
+$bel
+$dee
+$dah
+
+$len
+*enc
+
+$cnk
+$dat
+
+@mov 100 clk
+@mov 7 acc
+@cst "c"
+@mov acc bel
+@mov 0 acc
+@mov 36 dah
+@mov 12 dee
+
+# On the first run, read and convert to morse.
+@jmp encode
+
+# If we are done, end.
+teq &enc len
++end
+
+# Load the chunk
+mov *enc cnk
+inc &enc
+mov 0 dat
+
+# Play the chunk
+
+play:
+	mov cnk acc
+	dgt dat
+	teq acc null
+	+ jmp nxt
+	teq acc "-"
+	+ mov bel stdout
+	+ slp dah
+	teq acc "."
+	+ mov bel stdout
+	+ slp dee
+	inc dat
+	jmp play
+
+encode:
+	mov -1 clk
+	mov 1 stdin
+	mov stdin acc
+	teq acc null
+	- jmp encode-check    # not whitespace/null: real character, go process it
+	cst "i"               # null→0, "\n"→10, " "→32, etc.
+	teq acc 0
+	+ mov &enc len        # integer 0 means real EOF
+	+ mov 0 &enc
+	+ mov 100 clk
+	+ jmp nxt
+	jmp encode            # was whitespace, skip it
+
+encode-check:
+	teq acc "a"
+	teq acc "A"
+	+mov ".-" *enc
+	+inc &enc
+	teq acc "b"
+	teq acc "B"
+	+mov "-..." *enc
+	+inc &enc
+	teq acc "c"
+	teq acc "B"
+	+mov "-.-." *enc
+	+inc &enc
+	teq acc "d"
+	teq acc "D"
+	+mov "-.." *enc
+	+inc &enc
+	teq acc "e"
+	teq acc "E"
+	+mov "." *enc
+	+inc &enc
+	teq acc "f"
+	teq acc "F"
+	+mov "..-." *enc
+	+inc &enc
+	teq acc "g"
+	teq acc "G"
+	+mov "--." *enc
+	+inc &enc
+	teq acc "h"
+	teq acc "H"
+	+mov "...." *enc
+	+inc &enc
+	teq acc "i"
+	teq acc "I"
+	+mov ".." *enc
+	+inc &enc
+	teq acc "j"
+	teq acc "J"
+	+mov ".---" *enc
+	+inc &enc
+	teq acc "k"
+	teq acc "K"
+	+mov "-.-" *enc
+	+inc &enc
+	teq acc "l"
+	teq acc "L"
+	+mov ".-.." *enc
+	+inc &enc
+	teq acc "m"
+	teq acc "M"
+	+mov "--" *enc
+	+inc &enc	
+	teq acc "n"
+	teq acc "M"
+	+mov "-." *enc
+	+inc &enc
+	teq acc "o"
+	teq acc "O"
+	+mov "---" *enc
+	+inc &enc
+	teq acc "p"
+	teq acc "P"
+	+mov ".--." *enc
+	+inc &enc
+	teq acc "q"
+	teq acc "Q"
+	+mov "--.-" *enc
+	+inc &enc
+	teq acc "r"
+	teq acc "R"
+	+mov ".-." *enc
+	+inc &enc
+	teq acc "s"
+	teq acc "S"
+	+mov "..." *enc
+	+inc &enc
+	teq acc "t"
+	teq acc "T"
+	+mov "-" *enc
+	+inc &enc
+	teq acc "u"
+	teq acc "U"
+	+mov "..-" *enc
+	+inc &enc
+	teq acc "v"
+	teq acc "V"
+	+mov "...-" *enc
+	+inc &enc
+	teq acc "w"
+	teq acc "W"
+	+mov ".--" *enc
+	+inc &enc
+	teq acc "x"
+	teq acc "X"
+	+mov "-..-" *enc
+	+inc &enc
+	teq acc "y"
+	teq acc "Y"
+	+mov "-.--" *enc
+	+inc &enc
+	teq acc "z"
+	teq acc "Z"
+	+mov "--.." *enc
+	+inc &enc
+	teq acc "0"
+	+mov "-----" *enc
+	+inc &enc
+	teq acc "1"
+	+mov ".----" *enc
+	+inc &enc
+	teq acc "2"
+	+mov "..---" *enc
+	+inc &enc
+	teq acc "3"
+	+mov "...--" *enc
+	+inc &enc
+	teq acc "4"
+	+mov "....-" *enc
+	+inc &enc
+	teq acc "5"
+	+mov "....." *enc
+	+inc &enc
+	teq acc "6"
+	+mov "-...." *enc
+	+inc &enc
+	teq acc "7"
+	+mov "--..." *enc
+	+inc &enc
+	teq acc "8"
+	+mov "---.." *enc
+	+inc &enc
+	teq acc "9"
+	+mov "----." *enc
+	+inc &enc
+	teq acc "."
+	+mov ".-.-.-" *enc
+	+inc &enc
+	teq acc ","
+	+mov "--..--" *enc
+	+inc &enc
+	teq acc "?"
+	+mov "..--.." *enc
+	+inc &enc
+	teq acc "'"
+	+mov ".----." *enc
+	+inc &enc
+	teq acc "!"
+	+mov "-.-.--" *enc
+	+inc &enc
+	teq acc "/"
+	+mov "-..-." *enc
+	+inc &enc
+	teq acc "("
+	+mov "-.--." *enc
+	+inc &enc
+	teq acc ")"
+	+mov "-.--.-" *enc
+	+inc &enc
+	teq acc "&"
+	+mov ".-..." *enc
+	+inc &enc
+	teq acc ":"
+	+mov "---..." *enc
+	+inc &enc
+	teq acc ";"
+	+mov "-.-.-." *enc
+	+inc &enc
+	teq acc "="
+	+mov "-...-" *enc
+	+inc &enc
+	teq acc "+"
+	+mov ".-.-." *enc
+	+inc &enc
+	teq acc "-"
+	+mov "-....-" *enc
+	+inc &enc
+	teq acc "_"
+	+mov "..--.-" *enc
+	+inc &enc
+	teq acc "\""
+	+mov ".-..-." *enc
+	+inc &enc
+	teq acc "@"
+	+mov ".--.-." *enc
+	+inc &enc
+	jmp encode
+
+nxt:
+	nop

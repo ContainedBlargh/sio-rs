@@ -1,5 +1,17 @@
+$bel
+$spd
 
+@mov 30 clk
+@mov 15 spd
 @mov 7 acc
 @cst "c"
-mov acc stdout
-slp 5
+@mov acc bel
+@mov 2 acc
+
+teq acc 0
+- dec acc
++ swp spd clk
++ mov 2 acc
+
+mov bel stdout
+slp 1
