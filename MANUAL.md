@@ -153,13 +153,13 @@ dst index value # set character/digit at index to value
 
 ---
 
-### Type Conversion
+### Type Conversion / Casting
 
 ```
 cst spec
 ```
 
-Converts `acc` in place according to `spec`:
+Casts `acc` in place according to `spec`:
 
 | Spec   | Effect                                                      |
 |--------|-------------------------------------------------------------|
