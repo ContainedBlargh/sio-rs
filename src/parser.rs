@@ -2,6 +2,8 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use colored::Colorize;
+
 use crate::instruction::{Instruction, RegRef, TestKind};
 use crate::node::Node;
 use crate::pins::get_pin_channel;
@@ -15,15 +17,18 @@ fn format_parse_error(file: &str, line_num: usize, source: &str, msg: &str) -> S
         .split_once("\nhint: ")
         .map(|(m, h)| (m, Some(h)))
         .unwrap_or((msg, None));
-    let mut out = format!(
-        "error in {}:{}: {}\n  | {}",
-        file,
-        line_num,
-        main,
-        source.trim()
-    );
+
+    let label    = "error".red().bold();
+    let location = format!("{}:{}", file, line_num).bold();
+    let gutter   = "|".cyan().bold();
+    let src_line = source.trim().white();
+
+    let mut out = format!("{}: {}: {}\n  {} {}", label, location, main, gutter, src_line);
+
     if let Some(h) = hint {
-        out.push_str(&format!("\n  = hint: {}", h));
+        let eq         = "=".cyan().bold();
+        let hint_label = "hint".cyan().bold();
+        out.push_str(&format!("\n  {} {}: {}", eq, hint_label, h));
     }
     out
 }

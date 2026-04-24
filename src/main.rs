@@ -8,6 +8,8 @@ mod pins;
 mod register;
 mod value;
 
+use colored::Colorize;
+
 use std::thread;
 
 fn main() {
@@ -26,9 +28,11 @@ fn main() {
     xbus_pins.sort_by_key(|(id, _)| *id);
     for (pin_id, files) in &xbus_pins {
         eprintln!(
-            "warning: XBus pin x{} is declared in only one node ({}); \
+            "{}: XBus pin {} is declared in only one node ({}); \
              any mov or slx on this pin will block forever",
-            pin_id, files[0]
+            "warning".yellow().bold(),
+            format!("x{}", pin_id).bold(),
+            files[0].white()
         );
     }
 
