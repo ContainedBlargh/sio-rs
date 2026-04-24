@@ -658,6 +658,34 @@ fn try_match_label(line: &str) -> Option<(String, String)> {
     Some((name, rest))
 }
 
+/// Scan source files for XBus pin declarations (`$xN`) and return a map from
+/// pin ID to the list of file names that declare it.  Used to warn about
+/// one-sided connections before any threads start running.
+pub fn scan_xbus_declarations(paths: &[String]) -> std::collections::HashMap<i32, Vec<String>> {
+    let mut map: std::collections::HashMap<i32, Vec<String>> = std::collections::HashMap::new();
+    for path in paths {
+        let content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let name = path
+            .rsplit(|c: char| c == '/' || c == '\\')
+            .next()
+            .unwrap_or(path)
+            .to_string();
+        let mut seen = std::collections::HashSet::new();
+        for line in content.lines() {
+            if let Some((pin_label, true, _)) = try_match_pin(line.trim()) {
+                let id: i32 = pin_label.trim_start_matches('x').parse().unwrap_or(-1);
+                if seen.insert(id) {
+                    map.entry(id).or_default().push(name.clone());
+                }
+            }
+        }
+    }
+    map
+}
+
 /// Returns true if any source file references a graphical register as a token
 /// outside comments. Reuses the same `no_comments` + `tokenize` logic as the
 /// full parser so that `# mov 1 gfx` does not trigger a false positive.

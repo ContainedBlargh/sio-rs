@@ -17,6 +17,21 @@ fn main() {
         std::process::exit(2);
     }
 
+    // Warn about XBus pins that are only declared in one file — those will
+    // block forever when the program tries to send or receive on them.
+    let mut xbus_pins = parser::scan_xbus_declarations(&args)
+        .into_iter()
+        .filter(|(_, files)| files.len() == 1)
+        .collect::<Vec<_>>();
+    xbus_pins.sort_by_key(|(id, _)| *id);
+    for (pin_id, files) in &xbus_pins {
+        eprintln!(
+            "warning: XBus pin x{} is declared in only one node ({}); \
+             any mov or slx on this pin will block forever",
+            pin_id, files[0]
+        );
+    }
+
     // Detect gfx usage via comment-aware token scan before spawning threads.
     #[cfg(feature = "gfx")]
     let use_gfx = parser::source_uses_gfx(&args);
