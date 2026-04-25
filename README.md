@@ -54,6 +54,8 @@ It's got all the things you liked from SIO, plus a few *new features!*
 | `stderr` | Standard error              |
 | `stdin`  | Standard input              |
 | `rng`    | Random number generator     |
+| `*args`  | Commandline argument buffer |
+| `&args`  | Commandline argument offset |
 | `frc`    | File read control           |
 | `frt`    | File read tape              |
 | `fwc`    | File write control          |
