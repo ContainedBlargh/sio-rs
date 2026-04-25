@@ -46,6 +46,8 @@ Registers are the only named storage. There are built-in registers and user-decl
 | `stderr` | —                                   | Write to standard error                       |
 | `stdin`  | Read buffered input as string       | Write `N` (int) to read N bytes; write a string pattern to read until that pattern appears |
 | `rng`    | Get a random value                  | Seed the generator; type of seed affects type of output |
+| `*args`  | Get a commandline arg as a string   | Set a commandline arg after program start (why?) |
+| `&args`  | Get commandline arg offset, initially reads the amount of commandline args passed to the sio nodes  | Set a diff modular offset to access different args using `*args` |
 
 ### Declaring Custom Registers
 
@@ -603,35 +605,34 @@ done:
 ```
 
 ---
-
 ## Quick Reference
 
 ### Instructions
 
-| Instruction       | Effect                                      |
-|-------------------|---------------------------------------------|
-| `mov src dst`     | Copy src to dst                             |
-| `swp r1 r2`       | Swap r1 and r2                              |
-| `add v`           | acc += v                                    |
-| `sub v`           | acc -= v                                    |
-| `mul v`           | acc *= v                                    |
-| `div v`           | acc /= v                                    |
-| `inc r`           | r += 1                                      |
-| `dec r`           | r -= 1                                      |
-| `not`             | acc = bitwise NOT acc                       |
-| `dgt i`           | acc = char/digit at index i of acc          |
-| `dst i v`         | set char/digit at index i of acc to v       |
-| `cst spec`        | convert acc to type                         |
-| `teq a b`         | test equal                                  |
-| `tgt a b`         | test greater than                           |
-| `tlt a b`         | test less than                              |
-| `tcp a b`         | three-way compare (+ = greater, - = lesser) |
-| `jmp label`       | jump to label                               |
-| `slp n`           | sleep n milliseconds                        |
-| `slx reg`         | sleep until XBus reg has data               |
-| `gen pin on off`  | pulse power pin                             |
-| `nop`             | no operation                                |
-| `end`             | exit program                                |
+| Instruction      | Effect                                      |
+| ---------------- | ------------------------------------------- |
+| `mov src dst`    | Copy src to dst                             |
+| `swp r1 r2`      | Swap r1 and r2                              |
+| `add v`          | acc += v                                    |
+| `sub v`          | acc -= v                                    |
+| `mul v`          | acc *= v                                    |
+| `div v`          | acc /= v                                    |
+| `inc r`          | r += 1                                      |
+| `dec r`          | r -= 1                                      |
+| `not`            | acc = bitwise NOT acc                       |
+| `dgt i`          | acc = char/digit at index i of acc          |
+| `dst i v`        | set char/digit at index i of acc to v       |
+| `cst spec`       | convert acc to type                         |
+| `teq a b`        | test equal                                  |
+| `tgt a b`        | test greater than                           |
+| `tlt a b`        | test less than                              |
+| `tcp a b`        | three-way compare (+ = greater, - = lesser) |
+| `jmp label`      | jump to label                               |
+| `slp n`          | sleep n milliseconds                        |
+| `slx reg`        | sleep until XBus reg has data               |
+| `gen pin on off` | pulse power pin                             |
+| `nop`            | no operation                                |
+| `end`            | exit program                                |
 
 ### Modifiers
 
@@ -643,22 +644,24 @@ done:
 
 ### Built-in Registers
 
-| Register | Purpose                        |
-|----------|--------------------------------|
-| `acc`    | Accumulator                    |
-| `null`   | Null sink / null source        |
-| `clk`    | Clock speed (Hz, -1 = full)    |
-| `stdout` | Standard output                |
-| `stderr` | Standard error                 |
-| `stdin`  | Standard input                 |
-| `rng`    | Random number generator        |
-| `frc`    | File read control              |
-| `frt`    | File read tape                 |
-| `fwc`    | File write control             |
-| `fwt`    | File write tape                |
-| `gfx`    | Graphics control               |
-| `xsz`   | Framebuffer width              |
-| `ysz`   | Framebuffer height             |
-| `*pxl`  | Pixel buffer                   |
-| `&pxl`  | Pixel buffer offset            |
-| `kb0`   | Keyboard input (power pin)     |
+| Register | Purpose                     |
+| -------- | --------------------------- |
+| `acc`    | Accumulator                 |
+| `null`   | Null sink / null source     |
+| `clk`    | Clock speed (Hz, -1 = full) |
+| `stdout` | Standard output             |
+| `stderr` | Standard error              |
+| `stdin`  | Standard input              |
+| `rng`    | Random number generator     |
+| `*args`  | Commandline argument buffer |
+| `&args`  | Commandline argument offset |
+| `frc`    | File read control           |
+| `frt`    | File read tape              |
+| `fwc`    | File write control          |
+| `fwt`    | File write tape             |
+| `gfx`    | Graphics control            |
+| `xsz`    | Framebuffer width           |
+| `ysz`    | Framebuffer height          |
+| `*pxl`   | Pixel buffer                |
+| `&pxl`   | Pixel buffer offset         |
+| `kb0`    | Keyboard input (power pin)  |
