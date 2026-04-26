@@ -195,7 +195,7 @@ impl Node {
         if run_once {
             self.disabled.insert(exec_pc);
         }
-        if !self.jumped {
+        if !self.jumped && self.running {
             self.pc = (self.pc + 1) % len;
         }
         true

@@ -90,7 +90,7 @@ pub enum Register {
     #[cfg(feature = "dbg")]
     DebugStdin(Arc<DebugStdinShared>),
     #[cfg(feature = "dbg")]
-    DebugStdout(Arc<DebugOutputShared>),
+    DebugStdout { shared: Arc<DebugOutputShared>, is_err: bool },
 }
 
 /// Shared state between the node thread (which blocks on `get`) and the TUI
@@ -333,7 +333,7 @@ impl Register {
             Register::Stdout(t) => tape_write(t, &value, false),
             Register::Stderr(t) => tape_write(t, &value, true),
             #[cfg(feature = "dbg")]
-            Register::DebugStdout(shared) => shared.push(false, value.as_string()),
+            Register::DebugStdout { shared, is_err } => shared.push(*is_err, value.as_string()),
             Register::Stdin(s) => {
                 if s.closed {
                     return;
@@ -586,7 +586,7 @@ impl Register {
                 t.tape.pop_back().map(Value::S).unwrap_or(Value::Null)
             }
             #[cfg(feature = "dbg")]
-            Register::DebugStdout(_) => Value::Null,
+            Register::DebugStdout { .. } => Value::Null,
             Register::Stdin(s) => {
                 if s.closed && s.buf.trim().is_empty() {
                     return Value::Null;
@@ -858,11 +858,11 @@ pub fn new_debug_default_map(
     );
     m.insert(
         "stdout".to_string(),
-        Rc::new(RefCell::new(Register::DebugStdout(Arc::clone(&output_shared)))),
+        Rc::new(RefCell::new(Register::DebugStdout { shared: Arc::clone(&output_shared), is_err: false })),
     );
     m.insert(
         "stderr".to_string(),
-        Rc::new(RefCell::new(Register::DebugStdout(Arc::clone(&output_shared)))),
+        Rc::new(RefCell::new(Register::DebugStdout { shared: Arc::clone(&output_shared), is_err: true })),
     );
     (m, stdin_shared, output_shared)
 }

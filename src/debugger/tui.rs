@@ -31,7 +31,11 @@ pub struct DebuggerApp {
     pub status_message: Option<String>,
     pub pending_reload: bool,
     pub input_buf: String,
-    pub captured_output: VecDeque<(bool, String)>, // (is_err, text)
+    // Completed display lines (is_err, text). A new line is only started when
+    // the program explicitly writes "\n". Partial writes accumulate in
+    // output_pending until a newline arrives.
+    pub captured_output: VecDeque<(bool, String)>,
+    pub output_pending: (bool, String), // current incomplete line
 }
 
 impl DebuggerApp {
@@ -47,6 +51,7 @@ impl DebuggerApp {
             pending_reload: false,
             input_buf: String::new(),
             captured_output: VecDeque::new(),
+            output_pending: (false, String::new()),
         }
     }
 
@@ -268,11 +273,30 @@ impl DebuggerRunner {
     fn drain_output(&mut self) {
         for shared in &self.output_shareds {
             let mut g = shared.lines.lock().unwrap();
-            while let Some(entry) = g.pop_front() {
-                if self.app.captured_output.len() >= 1000 {
-                    self.app.captured_output.pop_front();
+            while let Some((is_err, text)) = g.pop_front() {
+                // If the stream switches between stdout/stderr mid-line, flush
+                // the pending line first so colors don't bleed.
+                if self.app.output_pending.0 != is_err && !self.app.output_pending.1.is_empty() {
+                    let line = std::mem::take(&mut self.app.output_pending.1);
+                    if self.app.captured_output.len() >= 1000 {
+                        self.app.captured_output.pop_front();
+                    }
+                    self.app.captured_output.push_back((self.app.output_pending.0, line));
                 }
-                self.app.captured_output.push_back(entry);
+                self.app.output_pending.0 = is_err;
+
+                // Split the incoming text on '\n'. Each '\n' completes a line.
+                for (i, part) in text.split('\n').enumerate() {
+                    if i > 0 {
+                        // A '\n' was hit — flush the pending line.
+                        let line = std::mem::take(&mut self.app.output_pending.1);
+                        if self.app.captured_output.len() >= 1000 {
+                            self.app.captured_output.pop_front();
+                        }
+                        self.app.captured_output.push_back((is_err, line));
+                    }
+                    self.app.output_pending.1.push_str(part);
+                }
             }
         }
     }
@@ -411,7 +435,7 @@ fn launch_editor(path: &str) {
 fn render(f: &mut ratatui::Frame, app: &DebuggerApp, stdin_from_file: bool) {
     let size = f.area();
     let show_stdin_bar = !stdin_from_file && app.stdin_mode();
-    let show_output = !app.captured_output.is_empty();
+    let show_output = !app.captured_output.is_empty() || !app.output_pending.1.is_empty();
 
     // Outer layout: main area + node tabs + [stdin bar] + help bar
     let outer = Layout::default()
@@ -661,29 +685,35 @@ fn render_stdin_input(f: &mut ratatui::Frame, app: &DebuggerApp, area: Rect) {
 
 fn render_output(f: &mut ratatui::Frame, app: &DebuggerApp, area: Rect) {
     let inner_height = area.height.saturating_sub(2) as usize;
-    let total = app.captured_output.len();
-    // Auto-scroll to bottom unless user has scrolled up.
-    let scroll = if app.output_scroll == 0 {
-        total.saturating_sub(inner_height)
-    } else {
-        app.output_scroll.min(total.saturating_sub(inner_height))
-    };
+    // Include the pending (incomplete) line in the display if non-empty.
+    let has_pending = !app.output_pending.1.is_empty();
+    let total = app.captured_output.len() + if has_pending { 1 } else { 0 };
+    let scroll = total.saturating_sub(inner_height);
 
-    let items: Vec<ListItem> = app
+    let completed: Vec<(bool, &str)> = app
         .captured_output
         .iter()
-        .enumerate()
+        .map(|(e, s)| (*e, s.as_str()))
+        .collect();
+    let all: Vec<(bool, &str)> = if has_pending {
+        let mut v = completed;
+        v.push((app.output_pending.0, app.output_pending.1.as_str()));
+        v
+    } else {
+        completed
+    };
+
+    let items: Vec<ListItem> = all
+        .iter()
         .skip(scroll)
         .take(inner_height)
-        .map(|(_, (is_err, text))| {
+        .map(|(is_err, text)| {
             let style = if *is_err {
                 Style::default().fg(Color::Red)
             } else {
                 Style::default().fg(Color::Green)
             };
-            // Escape literal newlines so they don't break the line layout.
-            let display = text.replace('\n', "↵").replace('\r', "");
-            ListItem::new(Line::from(Span::styled(display, style)))
+            ListItem::new(Line::from(Span::styled(text.to_string(), style)))
         })
         .collect();
 
