@@ -1,5 +1,10 @@
 #[cfg(feature = "gfx")]
 mod gfx;
+// The debugger module must be declared when the dbg feature is active so that
+// shared modules (node.rs) can reference crate::debugger via cfg(feature="dbg").
+#[cfg(feature = "dbg")]
+#[allow(dead_code, unused_imports)]
+mod debugger;
 mod channel;
 mod instruction;
 mod node;
@@ -9,7 +14,6 @@ mod register;
 mod value;
 
 use colored::Colorize;
-
 use std::thread;
 
 fn main() {
@@ -18,6 +22,12 @@ fn main() {
         eprintln!("usage: sio-rs <file.sio> [file.sio ...]");
         std::process::exit(2);
     }
+
+    // Anything that isn't a .sio file is a program argument visible via *args.
+    let program_args: Vec<String> = args.iter()
+        .filter(|s| !s.ends_with(".sio"))
+        .cloned()
+        .collect();
 
     // Warn about XBus pins that are only declared in one file — those will
     // block forever when the program tries to send or receive on them.
@@ -45,15 +55,13 @@ fn main() {
     if use_gfx {
         #[cfg(feature = "gfx")]
         {
-            // Initialise global gfx state so parsers running in node threads
-            // can call add_graphical_registers.
-            gfx::init();
             gfx::GFX_ENABLED.store(true, std::sync::atomic::Ordering::Relaxed);
 
             let handles: Vec<_> = args
                 .into_iter()
                 .map(|path| {
-                    thread::spawn(move || match parser::parse_from_path(&path) {
+                    let pa = program_args.clone();
+                    thread::spawn(move || match parser::parse_from_path(&path, &pa) {
                         Ok(node) => node.run(),
                         Err(e) => eprintln!("{}", e),
                     })
@@ -73,7 +81,8 @@ fn main() {
         let handles: Vec<_> = args
             .into_iter()
             .map(|path| {
-                thread::spawn(move || match parser::parse_from_path(&path) {
+                let pa = program_args.clone();
+                thread::spawn(move || match parser::parse_from_path(&path, &pa) {
                     Ok(node) => node.run(),
                     // Ignore non-node strings, these are passed as commandline arguments.
                     Err(_e) => (),

@@ -33,7 +33,17 @@ fn format_parse_error(file: &str, line_num: usize, source: &str, msg: &str) -> S
     out
 }
 
-pub fn parse_from_path(path: &str) -> Result<Node, String> {
+/// Optional per-instruction metadata collected during parsing for the debugger.
+struct DebugTracking<'a> {
+    pc_to_source_line: &'a mut Vec<usize>,
+    pc_to_instr_repr: &'a mut Vec<String>,
+}
+
+fn parse_inner(
+    path: &str,
+    mut registers: HashMap<String, Rc<RefCell<Register>>>,
+    mut debug: Option<DebugTracking<'_>>,
+) -> Result<(Node, Vec<String>), String> {
     let content =
         std::fs::read_to_string(path).map_err(|e| format!("read {}: {}", path, e))?;
     let lines: Vec<String> = content.lines().map(|l| l.trim_end().to_string()).collect();
@@ -50,17 +60,13 @@ pub fn parse_from_path(path: &str) -> Result<Node, String> {
         }
     }
 
-    let mut registers = register::new_default_map();
-    #[cfg(feature = "gfx")]
-    if crate::gfx::GFX_ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
-        register::add_graphical_registers(&mut registers);
-    }
     let mut program: Vec<(bool, Instruction)> = Vec::new();
     let mut jmp_table: HashMap<String, usize> = HashMap::new();
 
     let mut i: usize = 0;
     while i < lines.len() {
         let raw = lines[i].clone();
+        let source_line_idx = i;
         i += 1;
         let mut line = raw.trim().to_string();
 
@@ -153,6 +159,11 @@ pub fn parse_from_path(path: &str) -> Result<Node, String> {
             parse_instruction(&tokens, &registers, &labels, remaining)
                 .map_err(|e| format_parse_error(&name, i, &raw, &e))?;
         if let Some(instr) = instruction {
+            if let Some(ref mut dbg) = debug {
+                dbg.pc_to_source_line.push(source_line_idx);
+                let repr = no_comments(raw.trim().trim_start_matches('@').trim()).to_string();
+                dbg.pc_to_instr_repr.push(repr);
+            }
             program.push((run_once, instr));
         }
         i += consumed;
@@ -167,7 +178,45 @@ pub fn parse_from_path(path: &str) -> Result<Node, String> {
         }
     }
 
-    Ok(Node::new(name, program, registers, jmp_table))
+    Ok((Node::new(name, program, registers, jmp_table), lines))
+}
+
+pub fn parse_from_path(path: &str, program_args: &[String]) -> Result<Node, String> {
+    #[allow(unused_mut)]
+    let mut registers = register::new_default_map(program_args);
+    #[cfg(feature = "gfx")]
+    if crate::gfx::GFX_ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
+        register::add_graphical_registers(&mut registers);
+    }
+    let (node, _) = parse_inner(path, registers, None)?;
+    Ok(node)
+}
+
+#[cfg(feature = "dbg")]
+pub struct DebugParseResult {
+    pub node: Node,
+    pub source_lines: Vec<String>,
+    /// Maps each program-vector index to its 0-based source line index.
+    pub pc_to_source_line: Vec<usize>,
+    /// Human-readable instruction text for each PC slot, taken from the raw source line.
+    pub pc_to_instr_repr: Vec<String>,
+    pub stdin_shared: std::sync::Arc<register::DebugStdinShared>,
+    pub output_shared: std::sync::Arc<register::DebugOutputShared>,
+}
+
+/// Like `parse_from_path` but also returns source lines and a PC→source-line map
+/// for use by the step debugger.
+#[cfg(feature = "dbg")]
+pub fn parse_from_path_debug(path: &str, program_args: &[String]) -> Result<DebugParseResult, String> {
+    let (registers, stdin_shared, output_shared) = register::new_debug_default_map(program_args);
+    let mut pc_to_source_line = Vec::new();
+    let mut pc_to_instr_repr = Vec::new();
+    let tracking = DebugTracking {
+        pc_to_source_line: &mut pc_to_source_line,
+        pc_to_instr_repr: &mut pc_to_instr_repr,
+    };
+    let (node, source_lines) = parse_inner(path, registers, Some(tracking))?;
+    Ok(DebugParseResult { node, source_lines, pc_to_source_line, pc_to_instr_repr, stdin_shared, output_shared })
 }
 
 fn parse_instruction(

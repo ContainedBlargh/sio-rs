@@ -5,7 +5,19 @@ edition = "2024"
 
 [features]
 gfx = ["dep:minifb"]
+dbg = ["dep:ratatui", "dep:crossterm"]
+
+[[bin]]
+name = "sio-rs"
+path = "src/main.rs"
+
+[[bin]]
+name = "sio-dbg"
+path = "src/main_dbg.rs"
+required-features = ["dbg"]
 
 [dependencies]
-colored = "2"
-minifb = { version = "0.27", optional = true }
+colored   = "2"
+minifb    = { version = "0.27", optional = true }
+ratatui   = { version = "0.28", optional = true }
+crossterm = { version = "0.28", optional = true }

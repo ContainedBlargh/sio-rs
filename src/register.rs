@@ -1,8 +1,9 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
-use std::env;
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Seek, Write};
 use std::rc::Rc;
+#[cfg(feature = "dbg")]
+use std::sync::{Arc, Condvar, Mutex};
 
 use crate::channel::PinChannel;
 use crate::value::Value;
@@ -86,6 +87,71 @@ pub enum Register {
         hsz: Rc<RefCell<Register>>,
         state: std::sync::Arc<std::sync::Mutex<crate::gfx::GfxState>>,
     },
+    #[cfg(feature = "dbg")]
+    DebugStdin(Arc<DebugStdinShared>),
+    #[cfg(feature = "dbg")]
+    DebugStdout(Arc<DebugOutputShared>),
+}
+
+/// Shared state between the node thread (which blocks on `get`) and the TUI
+/// (which feeds lines via `provide`).
+#[cfg(feature = "dbg")]
+pub struct DebugStdinShared {
+    pub inner: Mutex<DebugStdinInner>,
+    pub ready: Condvar,
+}
+
+#[cfg(feature = "dbg")]
+pub struct DebugStdinInner {
+    pub buf: String,
+    /// Pending read request — `Some` while the node is blocked waiting for input.
+    pub pending: Option<StdinRequest>,
+}
+
+#[cfg(feature = "dbg")]
+#[derive(Clone)]
+pub enum StdinRequest {
+    Bytes(usize),
+    Pattern(String),
+}
+
+#[cfg(feature = "dbg")]
+impl DebugStdinShared {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            inner: Mutex::new(DebugStdinInner { buf: String::new(), pending: None }),
+            ready: Condvar::new(),
+        })
+    }
+
+    /// Called by the TUI to deliver a line of text to the waiting node thread.
+    pub fn provide(&self, text: String) {
+        let mut g = self.inner.lock().unwrap();
+        g.buf = text;
+        g.pending = None;
+        self.ready.notify_all();
+    }
+}
+
+/// Captured stdout/stderr for the TUI output panel.
+#[cfg(feature = "dbg")]
+pub struct DebugOutputShared {
+    pub lines: Mutex<VecDeque<(bool, String)>>, // (is_err, text)
+}
+
+#[cfg(feature = "dbg")]
+impl DebugOutputShared {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self { lines: Mutex::new(VecDeque::new()) })
+    }
+
+    pub fn push(&self, is_err: bool, text: String) {
+        let mut g = self.lines.lock().unwrap();
+        if g.len() >= 1000 {
+            g.pop_front();
+        }
+        g.push_back((is_err, text));
+    }
 }
 
 pub struct TapeState {
@@ -266,6 +332,8 @@ impl Register {
             }
             Register::Stdout(t) => tape_write(t, &value, false),
             Register::Stderr(t) => tape_write(t, &value, true),
+            #[cfg(feature = "dbg")]
+            Register::DebugStdout(shared) => shared.push(false, value.as_string()),
             Register::Stdin(s) => {
                 if s.closed {
                     return;
@@ -274,6 +342,17 @@ impl Register {
                     Value::S(pat) => s.search(&pat),
                     v => s.prepare(v.to_int().unsigned_abs() as usize),
                 }
+            }
+            #[cfg(feature = "dbg")]
+            Register::DebugStdin(shared) => {
+                let request = match value.flatten() {
+                    Value::S(pat) => StdinRequest::Pattern(pat),
+                    v => StdinRequest::Bytes(v.to_int().unsigned_abs() as usize),
+                };
+                let mut g = shared.inner.lock().unwrap();
+                g.pending = Some(request);
+                // Block until the TUI calls provide().
+                let _g = shared.ready.wait_while(g, |inner| inner.pending.is_some()).unwrap();
             }
             Register::Rng(r) => match value.flatten() {
                 Value::Null => {
@@ -384,7 +463,7 @@ impl Register {
                 if let Some(ref mut f) = s.file {
                     match mode {
                         FileMode::Str => {
-                            let mut text = value.as_string();
+                            let text = value.as_string();
                             let _ = f.write_all(text.as_bytes());
                             let _ = f.flush();
                             s.byte_pos += text.len() as u64;
@@ -506,11 +585,18 @@ impl Register {
             Register::Stdout(t) | Register::Stderr(t) => {
                 t.tape.pop_back().map(Value::S).unwrap_or(Value::Null)
             }
+            #[cfg(feature = "dbg")]
+            Register::DebugStdout(_) => Value::Null,
             Register::Stdin(s) => {
                 if s.closed && s.buf.trim().is_empty() {
                     return Value::Null;
                 }
                 let out = std::mem::take(&mut s.buf);
+                Value::S(out)
+            }
+            #[cfg(feature = "dbg")]
+            Register::DebugStdin(shared) => {
+                let out = std::mem::take(&mut shared.inner.lock().unwrap().buf);
                 Value::S(out)
             }
             Register::Rng(r) => {
@@ -596,6 +682,27 @@ impl Register {
         }
     }
 
+    /// Non-blocking put: returns false only when a Pin XBus channel is full.
+    /// All other register types always succeed (same as put).
+    #[cfg(feature = "dbg")]
+    pub fn try_put(&mut self, value: Value) -> bool {
+        if let Register::Pin(ch) = self {
+            return ch.try_send(value);
+        }
+        self.put(value);
+        true
+    }
+
+    /// Non-blocking get: returns None only when a Pin XBus channel has no value.
+    /// All other register types always return Some (same as get).
+    #[cfg(feature = "dbg")]
+    pub fn try_get(&mut self) -> Option<Value> {
+        if let Register::Pin(ch) = self {
+            return ch.try_receive();
+        }
+        Some(self.get())
+    }
+
     pub fn as_pin_channel(&self) -> Option<&PinChannel> {
         match self {
             Register::Pin(c) => Some(c),
@@ -656,7 +763,7 @@ pub fn new_plain() -> Register {
     Register::Plain(Value::I(0))
 }
 
-pub fn new_default_map() -> std::collections::HashMap<String, Rc<RefCell<Register>>> {
+pub fn new_default_map(program_args: &[String]) -> std::collections::HashMap<String, Rc<RefCell<Register>>> {
     use std::collections::HashMap;
     let mut m: HashMap<String, Rc<RefCell<Register>>> = HashMap::new();
     m.insert("null".to_string(), Rc::new(RefCell::new(Register::Null)));
@@ -715,8 +822,7 @@ pub fn new_default_map() -> std::collections::HashMap<String, Rc<RefCell<Registe
     );
 
     // Commandline args:
-    let raw_args: Vec<Value> = env::args().filter(|s|!s.ends_with(".sio")).map(|s| Value::S(s)).collect();
-    let args: Vec<Value> = raw_args[1..].to_vec();
+    let args: Vec<Value> = program_args.iter().map(|s| Value::S(s.clone())).collect();
     let argc: i32 = args
         .len()
         .try_into()
@@ -733,6 +839,34 @@ pub fn new_default_map() -> std::collections::HashMap<String, Rc<RefCell<Registe
     m
 }
 
+/// Like `new_default_map` but replaces stdin/stdout/stderr with debug variants
+/// that the TUI can feed and capture. Returns the map and the shared handles.
+#[cfg(feature = "dbg")]
+pub fn new_debug_default_map(
+    program_args: &[String],
+) -> (
+    std::collections::HashMap<String, Rc<RefCell<Register>>>,
+    Arc<DebugStdinShared>,
+    Arc<DebugOutputShared>,
+) {
+    let mut m = new_default_map(program_args);
+    let stdin_shared = DebugStdinShared::new();
+    let output_shared = DebugOutputShared::new();
+    m.insert(
+        "stdin".to_string(),
+        Rc::new(RefCell::new(Register::DebugStdin(Arc::clone(&stdin_shared)))),
+    );
+    m.insert(
+        "stdout".to_string(),
+        Rc::new(RefCell::new(Register::DebugStdout(Arc::clone(&output_shared)))),
+    );
+    m.insert(
+        "stderr".to_string(),
+        Rc::new(RefCell::new(Register::DebugStdout(Arc::clone(&output_shared)))),
+    );
+    (m, stdin_shared, output_shared)
+}
+
 #[cfg(feature = "gfx")]
 pub fn add_graphical_registers(m: &mut std::collections::HashMap<String, Rc<RefCell<Register>>>) {
     use crate::channel::PinChannel;
@@ -745,7 +879,7 @@ pub fn add_graphical_registers(m: &mut std::collections::HashMap<String, Rc<RefC
     let ysz_rc = Rc::new(RefCell::new(Register::Plain(Value::I(600))));
     let offset_rc = Rc::new(RefCell::new(Register::Offset(0)));
     let pxl_rc = Rc::new(RefCell::new(Register::SizedMemory {
-        mem: vec![Value::Null; 800 * 600],
+        mem: Vec::new(), // sized on first gfx write to avoid 800*600 upfront allocation
         offset: Rc::clone(&offset_rc),
     }));
     let kb_arc: Arc<AtomicI32> = crate::gfx::kb();

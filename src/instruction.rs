@@ -47,6 +47,7 @@ pub trait Executor {
     fn jump_to(&mut self, label: &str);
     fn stop(&mut self);
     fn sleep(&self, duration: i32);
+
 }
 
 impl Instruction {
@@ -55,7 +56,6 @@ impl Instruction {
             Instruction::Nop => {}
             Instruction::End => {
                 exec.stop();
-                std::process::exit(0);
             }
             Instruction::Mov(src, dst) => {
                 let v = src.flatten();
@@ -150,6 +150,60 @@ impl Instruction {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// Debug-mode variant: executes the instruction without blocking on XBus.
+    /// Returns false if the instruction requires XBus and the channel isn't
+    /// ready yet; the caller should retry without advancing PC.
+    #[cfg(feature = "dbg")]
+    pub fn try_execute(&self, exec: &mut dyn Executor) -> bool {
+        use crate::register::Register;
+        match self {
+            Instruction::Mov(src, dst) => {
+                // Determine whether src is an XBus pin read.
+                let src_xbus = if let Value::Reg(r) = src {
+                    matches!(&*r.borrow(), Register::Pin(ch) if ch.is_xbus())
+                } else {
+                    false
+                };
+                // Determine whether dst is an XBus pin write.
+                let dst_xbus = matches!(&*dst.borrow(), Register::Pin(ch) if ch.is_xbus());
+
+                if src_xbus {
+                    // Non-blocking read from XBus source.
+                    let src_reg = if let Value::Reg(r) = src { r } else { unreachable!() };
+                    match src_reg.borrow_mut().try_get() {
+                        None => return false,
+                        Some(v) => {
+                            if dst_xbus {
+                                return dst.borrow_mut().try_put(v);
+                            }
+                            dst.borrow_mut().put(v);
+                        }
+                    }
+                } else if dst_xbus {
+                    // Non-blocking write to XBus destination.
+                    let v = src.flatten();
+                    return dst.borrow_mut().try_put(v);
+                } else {
+                    self.execute(exec);
+                }
+                true
+            }
+            Instruction::Slx(r) => {
+                let borrow = r.borrow();
+                if let Some(ch) = borrow.as_pin_channel() {
+                    let ch = ch.clone();
+                    drop(borrow);
+                    return ch.try_sleep_until_ready();
+                }
+                true
+            }
+            other => {
+                other.execute(exec);
+                true
             }
         }
     }

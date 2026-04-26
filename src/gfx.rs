@@ -30,7 +30,7 @@ pub struct GfxState {
 impl GfxState {
     fn new() -> Self {
         Self {
-            pixel_buf: vec![0u32; 800 * 600],
+            pixel_buf: Vec::new(), // allocated on first refresh to avoid 1.92 MB upfront cost
             xsz: 800,
             ysz: 600,
             wsz: 800,
@@ -47,17 +47,12 @@ impl GfxState {
 static GFX_STATE: OnceLock<Arc<Mutex<GfxState>>> = OnceLock::new();
 static GFX_KB: OnceLock<Arc<AtomicI32>> = OnceLock::new();
 
-pub fn init() {
-    GFX_STATE.get_or_init(|| Arc::new(Mutex::new(GfxState::new())));
-    GFX_KB.get_or_init(|| Arc::new(AtomicI32::new(0)));
-}
-
 pub fn state() -> Arc<Mutex<GfxState>> {
-    GFX_STATE.get().expect("gfx not initialised").clone()
+    GFX_STATE.get_or_init(|| Arc::new(Mutex::new(GfxState::new()))).clone()
 }
 
 pub fn kb() -> Arc<AtomicI32> {
-    GFX_KB.get().expect("gfx not initialised").clone()
+    GFX_KB.get_or_init(|| Arc::new(AtomicI32::new(0))).clone()
 }
 
 // ── Color conversion ──────────────────────────────────────────────────────────
@@ -217,7 +212,13 @@ pub fn run_main_loop() {
             }
 
             if needs_refresh {
-                let buf: Vec<u32> = state_arc.lock().unwrap().pixel_buf.clone();
+                let mut s = state_arc.lock().unwrap();
+                let expected = (xsz * ysz) as usize;
+                if s.pixel_buf.len() != expected {
+                    s.pixel_buf.resize(expected, 0);
+                }
+                let buf: Vec<u32> = s.pixel_buf.clone();
+                drop(s);
                 if let Err(e) = w.update_with_buffer(&buf, xsz as usize, ysz as usize) {
                     eprintln!("gfx: update_with_buffer: {}", e);
                 }

@@ -7,12 +7,9 @@ $prv # register for the previously recorded measurement
 # Pre-fill prv with the highest possible number.
 @mov 1000 prv
 
-# Read three characters and one newline from stdin.
-mov 3 stdin
+# Read until next newline from stdin.
+mov "\n" stdin
 mov stdin acc
-# Discard newlines
-mov 1 stdin
-mov stdin null
 
 # mov "read '" stdout
 # mov acc stdout

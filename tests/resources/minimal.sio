@@ -1,0 +1,3 @@
+# The absolute minimal SIO program.
+@mov 1 clk
+nop

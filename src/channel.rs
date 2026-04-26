@@ -17,6 +17,9 @@ impl PinChannel {
             PinChannel::XBus(cv) => {
                 let (lock, cvar) = &**cv;
                 let mut slot = lock.lock().unwrap();
+                // Rendez-vous: wait for slot to be empty, deposit value, then wait
+                // for receiver to consume it before returning. This ensures the
+                // sender can't lap the receiver and overwrite an unread value.
                 while slot.is_some() {
                     let (s, _) = cvar
                         .wait_timeout(slot, Duration::from_millis(100))
@@ -25,6 +28,12 @@ impl PinChannel {
                 }
                 *slot = Some(FlatValue::from_value(value));
                 cvar.notify_all();
+                while slot.is_some() {
+                    let (s, _) = cvar
+                        .wait_timeout(slot, Duration::from_millis(100))
+                        .unwrap();
+                    slot = s;
+                }
             }
         }
     }
@@ -57,6 +66,50 @@ impl PinChannel {
                     .wait_timeout(slot, Duration::from_millis(100))
                     .unwrap();
                 slot = s;
+            }
+        }
+    }
+
+    /// Non-blocking variants for the step debugger: return false if the
+    /// operation would block (channel not ready), true if it completed.
+    #[cfg(feature = "dbg")]
+    pub fn try_send(&self, value: Value) -> bool {
+        match self {
+            PinChannel::Power(_) => { self.send(value); true }
+            PinChannel::XBus(cv) => {
+                let (lock, _) = &**cv;
+                let mut slot = lock.lock().unwrap();
+                if slot.is_some() { return false; }
+                *slot = Some(FlatValue::from_value(value));
+                cv.1.notify_all();
+                true
+            }
+        }
+    }
+
+    #[cfg(feature = "dbg")]
+    pub fn try_receive(&self) -> Option<Value> {
+        match self {
+            PinChannel::Power(a) => Some(Value::I(a.load(Ordering::SeqCst))),
+            PinChannel::XBus(cv) => {
+                let (lock, cvar) = &**cv;
+                let mut slot = lock.lock().unwrap();
+                if slot.is_none() { return None; }
+                let v = slot.take().unwrap();
+                cvar.notify_all();
+                Some(v.into_value())
+            }
+        }
+    }
+
+    #[cfg(feature = "dbg")]
+    pub fn try_sleep_until_ready(&self) -> bool {
+        match self {
+            PinChannel::Power(_) => true,
+            PinChannel::XBus(cv) => {
+                let (lock, _) = &**cv;
+                let slot = lock.lock().unwrap();
+                slot.is_some()
             }
         }
     }
